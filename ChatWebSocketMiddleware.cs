@@ -9,11 +9,20 @@ using Microsoft.AspNetCore.Http;
 
 namespace MyWebApi.Controllers
 {
+    /// <summary>
+    /// Handles incoming websocket connections
+    /// 
+    /// TODO: 
+    ///   - implement some kind of heartbeat to prune dead clients periodically
+    ///   - setup a communication contract (messages types and such)
+    /// </summary>
     public class ChatWebSocketMiddleware
     {
         private static ConcurrentDictionary<string, WebSocket> _sockets = new ConcurrentDictionary<string, WebSocket>();
 
         private readonly RequestDelegate _next;
+
+        private bool isLoggedIn = false;
 
         public ChatWebSocketMiddleware(RequestDelegate next)
         {
@@ -30,28 +39,34 @@ namespace MyWebApi.Controllers
 
             CancellationToken ct = context.RequestAborted;
             WebSocket currentSocket = await context.WebSockets.AcceptWebSocketAsync();
-
-            // handle some kind of authentication username:secret
-            string initialMessage = await ReceiveStringAsync(currentSocket, ct), userSecret;
-            string[] auth = initialMessage.Split(':', 2);
-
-            if (auth.Length >= 2 && AuthController.users.TryGetValue(auth[0], out userSecret))
-                if (auth[1] == userSecret)
-                {
-                    // invalidates session when connecting to avoid double connection
-                    string newPass = Guid.NewGuid().ToString();
-                    AuthController.users.TryUpdate(auth[0], newPass, userSecret);
-                    await HandleWebSocket(currentSocket, auth[0], ct);
-                }
+            await HandleWebSocket(currentSocket, ct);
 
             await currentSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", ct);
             currentSocket.Dispose();
         }
 
-        private static async Task HandleWebSocket(WebSocket currentSocket, string username, CancellationToken ct = default(CancellationToken))
+        private static async Task HandleWebSocket(WebSocket currentSocket, CancellationToken ct = default(CancellationToken))
         {
+            // register socket before authentication so that guests receive updates
             var socketId = Guid.NewGuid().ToString();
             _sockets.TryAdd(socketId, currentSocket);
+
+            // however, first message HAS to be authenticating
+            // handle some kind of authentication username:secret
+            string initialMessage = await ReceiveStringAsync(currentSocket, ct), userSecret;
+            string[] auth = initialMessage.Split(':', 2);
+
+            if (auth.Length < 2 || !AuthController.users.TryGetValue(auth[0], out userSecret))
+                return; // invalid format or unknown user
+
+            if (auth[1] != userSecret)
+                return; // wrong token
+
+            // invalidates session when connecting to avoid double connection
+            string newPass = Guid.NewGuid().ToString();
+            AuthController.users.TryUpdate(auth[0], newPass, userSecret);
+
+            string username = auth[0];
 
             await SendStringToAllAsync($"*{username} joined the chat*", ct);
 

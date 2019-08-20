@@ -6,15 +6,29 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Newtonsoft.Json;
+using System.Linq;
 
 namespace MyWebApi.Controllers
 {
+
+    class WebSocketChatMessage
+    {
+        public string username;
+        public string message;
+    }
+
+    class WebSocketConnectionMessage
+    {
+        public string username;
+        public bool left;
+    }
+
     /// <summary>
     /// Handles incoming websocket connections
     /// 
     /// TODO: 
     ///   - implement some kind of heartbeat to prune dead clients periodically
-    ///   - setup a communication contract (messages types and such)
     /// </summary>
     public class ChatWebSocketMiddleware
     {
@@ -68,7 +82,7 @@ namespace MyWebApi.Controllers
 
             string username = auth[0];
 
-            await SendStringToAllAsync($"*{username} joined the chat*", ct);
+            await NotifyUserConnection(username, false, ct);
 
             while (true)
             {
@@ -86,7 +100,7 @@ namespace MyWebApi.Controllers
                         continue;
                     }
 
-                    await SendStringToAllAsync($"{username}: {response}", ct);
+                    await BroadcastMessage(username, response, ct);
                 }
                 catch (OperationCanceledException)
                 {
@@ -94,7 +108,7 @@ namespace MyWebApi.Controllers
                 }
             }
 
-            await SendStringToAllAsync($"*{username} left the chat*");
+            await NotifyUserConnection(username, true);
 
             WebSocket dummy;
             _sockets.TryRemove(socketId, out dummy);
@@ -104,6 +118,24 @@ namespace MyWebApi.Controllers
             AuthController.users.TryRemove(username, out key);
         }
 
+        private static Task BroadcastMessage(string username, string message, CancellationToken ct = default(CancellationToken))
+        {
+            return SendStringToAllAsync(JsonConvert.SerializeObject(new WebSocketChatMessage()
+            {
+                username = username,
+                message = message,
+            }), ct);
+        }
+
+        private static Task NotifyUserConnection(string username, bool left, CancellationToken ct = default(CancellationToken))
+        {
+            return SendStringToAllAsync(JsonConvert.SerializeObject(new WebSocketConnectionMessage()
+            {
+                username = username,
+                left = left,
+            }));
+        }
+
         private static Task SendStringAsync(WebSocket socket, string data, CancellationToken ct = default(CancellationToken))
         {
             var buffer = Encoding.UTF8.GetBytes(data);
@@ -111,18 +143,9 @@ namespace MyWebApi.Controllers
             return socket.SendAsync(segment, WebSocketMessageType.Text, true, ct);
         }
 
-        private static async Task SendStringToAllAsync(string data, CancellationToken ct = default(CancellationToken))
+        private static Task SendStringToAllAsync(string data, CancellationToken ct = default(CancellationToken))
         {
-            foreach (var socket in _sockets)
-            {
-                if (socket.Value.State != WebSocketState.Open)
-                {
-                    continue;
-                }
-
-                await SendStringAsync(socket.Value, data, ct);
-            }
-
+            return Task.WhenAll(_sockets.Values.Select(socket => SendStringAsync(socket, data, ct)));
         }
 
         private static async Task<string> ReceiveStringAsync(WebSocket socket, CancellationToken ct = default(CancellationToken))

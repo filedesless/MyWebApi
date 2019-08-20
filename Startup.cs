@@ -29,26 +29,18 @@ namespace MyWebApi
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
-                app.UseCors(builder =>
-                {
-                    builder.AllowAnyOrigin();
-                    builder.AllowAnyMethod();
-                    builder.AllowAnyHeader();
-                });
             }
             else
             {
                 app.UseHsts();
-                app.UseCors(builder =>
-                {
-                    builder.SetIsOriginAllowed(origin =>
-                    {
-                        return origin == "chat.filedesless.dev";
-                    });
-                    builder.AllowAnyMethod();
-                    builder.AllowAnyHeader();
-                });
             }
+
+            app.UseCors(builder =>
+            {
+                builder.AllowAnyOrigin();
+                builder.AllowAnyMethod();
+                builder.AllowAnyHeader();
+            });
 
             app.UseWebSockets();
             app.Map("/ws/chat", (_app) => _app.UseMiddleware<ChatWebSocketMiddleware>());

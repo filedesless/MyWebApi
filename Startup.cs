@@ -39,6 +39,15 @@ namespace MyWebApi
             else
             {
                 app.UseHsts();
+                app.UseCors(builder =>
+                {
+                    builder.SetIsOriginAllowed(origin =>
+                    {
+                        return origin == "chat.filedesless.dev";
+                    });
+                    builder.AllowAnyMethod();
+                    builder.AllowAnyHeader();
+                });
             }
 
             app.UseWebSockets();

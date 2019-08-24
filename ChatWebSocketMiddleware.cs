@@ -55,7 +55,14 @@ namespace MyWebApi.Controllers
             WebSocket currentSocket = await context.WebSockets.AcceptWebSocketAsync();
             await HandleWebSocket(currentSocket, ct);
 
-            await currentSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", ct);
+            try
+            {
+                await currentSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", ct);
+            }
+            catch (WebSocketException)
+            {
+                // handle failure?
+            }
             currentSocket.Dispose();
         }
 

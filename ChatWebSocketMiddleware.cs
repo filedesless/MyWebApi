@@ -136,11 +136,18 @@ namespace MyWebApi.Controllers
             }));
         }
 
-        private static Task SendStringAsync(WebSocket socket, string data, CancellationToken ct = default(CancellationToken))
+        private static async Task SendStringAsync(WebSocket socket, string data, CancellationToken ct = default(CancellationToken))
         {
             var buffer = Encoding.UTF8.GetBytes(data);
             var segment = new ArraySegment<byte>(buffer);
-            return socket.SendAsync(segment, WebSocketMessageType.Text, true, ct);
+            try
+            {
+                await socket.SendAsync(segment, WebSocketMessageType.Text, true, ct);
+            }
+            catch (WebSocketException)
+            {
+                // handle failure?
+            }
         }
 
         private static Task SendStringToAllAsync(string data, CancellationToken ct = default(CancellationToken))
@@ -154,16 +161,23 @@ namespace MyWebApi.Controllers
             using (var ms = new MemoryStream())
             {
                 WebSocketReceiveResult result;
-                do
+                try
                 {
-                    result = await socket.ReceiveAsync(buffer, ct);
-                    ms.Write(buffer.Array, buffer.Offset, result.Count);
-                }
-                while (!result.EndOfMessage);
+                    do
+                    {
+                        result = await socket.ReceiveAsync(buffer, ct);
+                        ms.Write(buffer.Array, buffer.Offset, result.Count);
+                    }
+                    while (!result.EndOfMessage);
 
-                ms.Seek(0, SeekOrigin.Begin);
-                if (result.MessageType != WebSocketMessageType.Text)
-                {
+                    ms.Seek(0, SeekOrigin.Begin);
+                    if (result.MessageType != WebSocketMessageType.Text)
+                    {
+                        return null;
+                    }
+                }
+                catch (WebSocketException)
+                { // handle failure?
                     return null;
                 }
 
